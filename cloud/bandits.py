@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import random
 from typing import Dict, List
+from common.logging_config import logger
 
 import ray
 
@@ -20,12 +21,17 @@ class EpsilonGreedyBandit:
 
     def select(self) -> str:
         if not self.arms:
+            logger.exception("[Cloud-Agent]: No arms configured.")
             raise ValueError("no arms configured")
         if random.random() < self.epsilon:
             return random.choice(self.arms)
         return max(self.values, key=self.values.get)
 
     def update(self, arm: str, reward: float) -> None:
+        if arm not in self.counts:
+            self.arms.append(arm)
+            self.counts[arm] = 0
+            self.values[arm] = 0.0
         n = self.counts[arm] + 1
         value = self.values[arm]
         self.counts[arm] = n

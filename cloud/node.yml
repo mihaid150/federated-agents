@@ -1,0 +1,38 @@
+services:
+  cloud_agent:
+    image: cloud_agent_service:latest
+    container_name: ${CLOUD_AGENT_CONTAINER_NAME:-cloud-agent}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    env_file:
+      - ./.env             # <-- load cloud-agent/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CLOUD_MQTT_HOST=${CLOUD_MQTT_HOST:-mqtt-cloud}
+      - CLOUD_MQTT_PORT=${CLOUD_MQTT_PORT:-1883}
+      # Map to what BaseConfig expects:
+      - MQTT_HOST=${CLOUD_MQTT_HOST:-mqtt-cloud}
+      - MQTT_PORT=${CLOUD_MQTT_PORT:-1883}
+
+      - TOPIC_ROUND_STARTED=${TOPIC_ROUND_STARTED:-cloud/events/round-started}
+      - TOPIC_FOG_MODEL_RECEIVED=${TOPIC_FOG_MODEL_RECEIVED:-cloud/events/fog-model-received}
+      - TOPIC_CLOUD_MODEL_BROADCAST=${TOPIC_CLOUD_MODEL_BROADCAST:-cloud/events/cloud-model-broadcast}
+      - TOPIC_AGENT_COMMANDS=${TOPIC_AGENT_COMMANDS:-cloud/agent/commands}
+
+      - BANDIT_ARMS=${BANDIT_ARMS:-fog1,fog2}
+      - BANDIT_EPSILON=${BANDIT_EPSILON:-0.1}
+      - ORCH_DEFAULT_QUOTA=${ORCH_DEFAULT_QUOTA:-0.2}
+      - ORCH_DEFAULT_PRESSURE=${ORCH_DEFAULT_PRESSURE:-0.3}
+      - LOG_PREFIX=${LOG_PREFIX:-[cloud-agent]}
+    networks:
+      - aqtf_shared_network
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+
+networks:
+  aqtf_shared_network: {} # {} used for remote nodes
+    # use only when all nodes on same host
+    # external: true

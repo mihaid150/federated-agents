@@ -1,7 +1,7 @@
 import os, json, threading
 import paho.mqtt.client as mqtt
 import ray
-from agents.common.contracts import Telemetry, NudgeCommand
+from common.contracts import Telemetry, NudgeCommand
 
 EDGE_NAME = os.getenv("EDGE_NAME", os.getenv("NODE_NAME", "edge1_fog1"))
 MQTT_HOST = os.getenv("FOG_MQTT_HOST", "mqtt-fog1")

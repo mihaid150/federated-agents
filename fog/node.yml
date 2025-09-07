@@ -1,0 +1,39 @@
+services:
+  fog_agent:
+    image: fog_agent_service:latest
+    container_name: ${FOG_AGENT_CONTAINER_NAME:-fog-agent}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Point to the SAME broker your fog node uses
+      - FOG_MQTT_HOST=${FOG_MQTT_HOST:-mqtt}
+      - FOG_MQTT_PORT=${FOG_MQTT_PORT:-1883}
+
+      # Topic overrides (optional; defaults match fog_service.py)
+      - TOPIC_EDGE_MODEL_RECEIVED=${TOPIC_EDGE_MODEL_RECEIVED:-fog/events/edge-model-received}
+      - TOPIC_AGGREGATION_COMPLETE=${TOPIC_AGGREGATION_COMPLETE:-fog/events/aggregation-complete}
+      - TOPIC_CLOUD_MODEL_DOWNLINK=${TOPIC_CLOUD_MODEL_DOWNLINK:-fog/events/cloud-model-downlink}
+      - TOPIC_AGENT_COMMANDS=${TOPIC_AGENT_COMMANDS:-fog/agent/commands}
+
+      # Actor knobs
+      - FEATURE_WINDOW=${FEATURE_WINDOW:-12}
+
+      # Logging
+      - LOG_PREFIX=${LOG_PREFIX:-[fog-agent]}
+    networks:
+      - aqtf_shared_network
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    extra_hosts:
+      - "cloud:${CLOUD_IP}"
+      - "rabbitmq-cloud:${CLOUD_IP}"
+      - "mqtt-cloud:${CLOUD_IP}"
+
+networks:
+  aqtf_shared_network: { } # {} used for remote nodes
+  # use only when all nodes on same host
+  # external: true

@@ -1,0 +1,34 @@
+services:
+  edge_agent:
+    image: edge_agent_app:latest
+    container_name: ${EDGE_AGENT_CONTAINER_NAME:-edge_agent_app}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+      # identity
+      - EDGE_NAME=${EDGE_NAME}
+      - NODE_NAME=${NODE_NAME:-${EDGE_NAME}}
+      # fog-local MQTT
+      - FOG_MQTT_HOST=${FOG_MQTT_HOST}
+      - FOG_MQTT_PORT=${FOG_MQTT_PORT:-1883}
+      # policy knobs (optional)
+      - POLICY_MAE_THRESHOLD=${POLICY_MAE_THRESHOLD:-0.12}
+      - POLICY_REQUIRES_DRIFT=${POLICY_REQUIRES_DRIFT:-true}
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    networks:
+      - aqtf_shared_network
+    command: python -m edge.app_factory
+    restart: unless-stopped
+    extra_hosts:
+      - "fog:${FOG_IP}"
+      - "rabbitmq-fog:${FOG_IP}"
+      - "mqtt-fog:${FOG_IP}"
+
+networks:
+  aqtf_shared_network: { } # {} used for remote nodes
+  # use only when all nodes on same host
+  # external: true

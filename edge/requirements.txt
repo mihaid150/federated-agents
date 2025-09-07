@@ -1,0 +1,4 @@
+ray[serve]==2.31.0
+paho-mqtt>=1.6.1
+pydantic==2.10.5
+river==0.21.1
