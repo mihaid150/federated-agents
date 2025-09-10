@@ -7,6 +7,7 @@ import threading
 
 import ray
 from ray import serve
+from common.actors import RayHub
 
 from edge.sensing_agent import SensingAgent
 from edge.forecast_serve import ForecasterAgent
@@ -27,7 +28,7 @@ class Config:
         # INPUT_TOPIC: node/{EDGE}/telemetry
         # OUTPUT_TOPIC: where we publish nudges; default below works with fog-node if you set it there too.
         self.mqtt_input_topic = os.getenv("MQTT_INPUT_TOPIC", f"node/{self.edge_name}/telemetry")
-        self.mqtt_output_topic = os.getenv("MQTT_OUTPUT_TOPIC", "fog/agent/commands")  # unified with fog-node/agent
+        self.mqtt_output_topic = os.getenv("MQTT_OUTPUT_TOPIC", f"agent/{self.edge_name}/commands")  # unified with fog-node/agent
 
         # Policy thresholds
         self.policy_mae_threshold = float(os.getenv("POLICY_MAE_THRESHOLD", "0.12"))
@@ -38,20 +39,27 @@ class Config:
 
 
 class Actors:
-    """Owns Ray initialization and core actors."""
     def __init__(self, cfg: Config):
         self.cfg = cfg
-        # Start Ray (single-node) and Ray Serve
-        ray.init(ignore_reinit_error=True, include_dashboard=False)
 
-        if cfg.serve_detached:
-            serve.start(detached=True)
+        RayHub(namespace="edge")
 
-        # Deploy the forecaster HTTP endpoint (Ray Serve)
-        # POST /forecast   body: ForecastRequest -> ForecastResponse
-        serve.run(ForecasterAgent.bind())
+        http_opts = {
+            "host": "0.0.0.0",
+            "port": 8000,
+            "location": "HeadOnly",
+            "num_cpus": 0.05,
+        }
 
-        # Sensing agent (detached so restarts won’t recreate it)
+        # Start Serve once
+        try:
+            _ = serve.status()  # raises if not started
+        except Exception:
+            serve.start(detached=True, http_options=http_opts)
+
+        # Ensure exactly one app/deployment; idempotent on updates
+        serve.run(ForecasterAgent.bind(), name="default")
+
         self.sensing = self._get_or_create(SensingAgent, f"sensing_{cfg.edge_name}")
 
     @staticmethod

@@ -2,7 +2,7 @@ import ray
 from datetime import datetime
 from river import drift, linear_model, optim, metrics
 
-@ray.remote
+@ray.remote(num_cpus=0.05, memory=int(32 * 1024 * 1024), max_restarts=0)
 class SensingAgent:
     def __init__(self, lr=0.01, mae_window=288):
         # Simple online regressor predicting value from time features
@@ -24,7 +24,8 @@ class SensingAgent:
         self.mae_metric.update(y_true, y_pred)
         self.errors.append(err)
         if len(self.errors) > self.mae_window:
-            self.errors.pop(0)
+            # Drop half-window at once to avoid O(n) pops & reduce RSS spikes
+            self.errors = self.errors[-(self.mae_window // 2):]
         self.adwin.update(err)
         return {
             "drift": float(self.adwin.drift_detected),

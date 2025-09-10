@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Optional, List
 
 import ray
-
+from datetime import datetime, timedelta
 from common.event_bus import EventBus
 from common.actors import RayHub
 from common.logging_config import logger
@@ -55,8 +55,7 @@ class FogConfig:
     # cloud-agent, fog-agent topics
     # targeted and broadcast
     topic_cloud_to_fog_targeted: str = os.getenv("TOPIC_CLOUD_TO_FOG_TARGETED", f"cloud/agent/fog/{os.getenv('FOG_NAME', '')}/commands")
-
-    topic_cloud_to_fog_broadcast: str = os.getenv("TOPIC_CLOUD_TO_FOG_BROADCAST", "cloud/agent/fog/all/commands")
+    topic_cloud_to_fog_broadcast: str = os.getenv("TOPIC_CLOUD_TO_FOG_BROADCAST", "cloud/fog/command")
 
 # =========================
 # Commands publisher
@@ -67,10 +66,15 @@ class FogCommandPublisher:
         self.cfg = cfg
         self.bus = bus
 
-    def retrain_fog(self, round_id: Optional[int] = None, budget: str = "LOW"):
+    def retrain_fog(self, round_id: Optional[int] = None, budget: str = "LOW", params: dict | None = None):
         self.bus.publish(
             self.cfg.topic_agent_commands,
-            {"cmd": "RETRAIN_FOG", "budget": budget, "round_id": round_id, "ts": int(time.time())},
+            {
+                "cmd": "RETRAIN_FOG",
+                "budget": budget,
+                "round_id": round_id,
+                "params": dict(params or {}),
+                "ts": int(time.time())},
             qos=1
         )
 
@@ -127,8 +131,26 @@ class FogEventHandler:
         metrics = payload.get("metrics") or {}
         drift = float(metrics.get("drift", 0.0))
         mae = float(metrics.get("mae", 0.0))
+        mse = float(metrics.get("mse", 0.0))
         backlog = int(payload.get("backlog", 0))
         round_id = payload.get("round_id")
+        edge_name = str(payload.get("edge_name", ""))
+
+        # 1) Update bandit/tuner reward with NEGATIVE MSE (lower MSE = higher reward)
+        try:
+            _ = ray.get(self._tuner.reward.remote("lstm", -mse))  # arm label aligned with your model list
+        except Exception:
+            logger.exception("%s tuner reward failed (mse=%s)", self.cfg.log_prefix, mse)
+
+        # 2) Optionally retrain edges if drift/mae threshold is breached; pass DATA-PLANE params.
+        if drift or mae > 0.15:
+            start = (datetime.utcnow() - timedelta(days=3)).strftime("%Y-%m-%d")
+            retrain_params = {
+                "date": start,  # edge will train [start .. start+2d], evaluate +2d..+4d
+                "sequence_length": 144,  # flows into post_preprocessing_padding(...)
+            }
+            # fan-out RETRAIN_FOG to edges via fog node, preserving params
+            self.pub.retrain_fog(round_id=round_id, budget="LOW", params=retrain_params)
 
         # Coordinator: decide retrain/throttle based on signals
         try:
@@ -238,7 +260,12 @@ class FogService:
                 tgt = target or self.cfg.fog_name
                 if not self.cfg.fog_name or tgt == self.cfg.fog_name:
                     logger.info("%s this fog selected by cloud; triggering RETRAIN_FOG", self.cfg.log_prefix)
-                    self.publisher.retrain_fog(round_id=round_id, budget="LOW")
+                    self.publisher.retrain_fog(
+                        round_id = round_id,
+                        budget = "LOW",
+                        params = {"date": datetime.utcnow().strftime("%Y-%m-%d"),
+                                 "sequence_length": 144},
+                    )
                 else:
                     logger.info("%s SELECT_FOG for %s; this fog is %s → ignore",
                                 self.cfg.log_prefix, tgt, self.cfg.fog_name)

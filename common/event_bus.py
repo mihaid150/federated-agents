@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import os
 import threading
 import socket
 from typing import Callable, Optional, List, Tuple
@@ -14,7 +15,11 @@ class EventBus:
         self.port = port
         self.log_prefix = log_prefix
 
-        client_id = f"agent-{socket.gethostname()}"
+        fog = os.getenv("FOG_NAME", None)
+        if fog is not None:
+            client_id = f"agent-{fog}-{socket.gethostname()}"
+        else:
+            client_id = f"agent-{socket.gethostname()}"
         self.client = mqtt.Client(client_id=client_id, clean_session=False)
         self.client.enable_logger()
 

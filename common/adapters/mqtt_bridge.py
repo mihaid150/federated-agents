@@ -1,6 +1,7 @@
 import os, json, threading
 import paho.mqtt.client as mqtt
 import ray
+from datetime import datetime
 from common.contracts import Telemetry, NudgeCommand
 
 EDGE_NAME = os.getenv("EDGE_NAME", os.getenv("NODE_NAME", "edge1_fog1"))
@@ -40,12 +41,15 @@ class MQTTBridge:
         # Decide and publish a nudge if needed
         should = ray.get(self.sensing.should_nudge.remote(self.policy_threshold, True))
         if should:
-
+            today = datetime.utcnow().strftime("%Y-%m-%d")
             cmd = NudgeCommand(
                 command="REQUEST_RETRAIN",
-                reason="drift",
-                mae=metrics["mae"],
-                params={"window_days": 2},
+                reason="policy",
+                mae=float(metrics.get("mae", 0.0)),
+                params={
+                    "date": today,  # consumed by EdgeService.train_edge_local_model(...)
+                    "sequence_length": 144,  # flows into post_preprocessing_padding(...)
+                },
             )
             self.cli.publish(OUTPUT_TOPIC, cmd.model_dump_json(), qos=1)
             print(f"[mqtt_bridge] Nudge published to {OUTPUT_TOPIC}: {cmd}")
